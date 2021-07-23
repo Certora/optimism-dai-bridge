@@ -349,17 +349,18 @@ rule permit(address owner, address spender, uint256 value, uint256 deadline, uin
 // Verify revert rules on permit
 rule permit_revert(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) {
     env e;
-
+    uint256 originalNonce = nonces(owner);
+    
     permit@withrevert(e, owner, spender, value, deadline, v, r, s);
     bool permitReverted = lastReverted;
     bool revert1 = e.block.timestamp > deadline;
     bool revert2 = e.msg.value > 0;
     bool revert3 = hashHelper.call_ecrecover(
-        hashHelper.computeDigestForDai(DOMAIN_SEPARATOR(), PERMIT_TYPEHASH(), owner, spender, value, nonces(owner), deadline),
+        hashHelper.computeDigestForDai(DOMAIN_SEPARATOR(), PERMIT_TYPEHASH(), owner, spender, value, originalNonce, deadline),
         v,
         r,
-        s) == owner;
-    bool revert4 = owner != 0;
+        s) != owner;
+    bool revert4 = owner == 0;
 
     assert(revert1 => permitReverted, "Deadline exceed did not revert");
     assert(revert2 => permitReverted, "Sending ETH did not revert");

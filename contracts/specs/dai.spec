@@ -1,6 +1,8 @@
 // dai.spec
 
-// certoraRun contracts/l2/dai.sol:Dai --verify Dai:contracts/specs/dai.spec --rule_sanity --solc_args "['--optimize','--optimize-runs','200']"
+// certoraRun contracts/l2/dai.sol:Dai contracts/specs/HashHelper.sol --verify Dai:contracts/specs/dai.spec --rule_sanity --solc_args "['--optimize','--optimize-runs','200']"
+
+using HashHelper as hashHelper
 
 methods {
     wards(address) returns (uint256) envfree
@@ -15,6 +17,8 @@ methods {
     deploymentChainId() returns (uint256) envfree
     PERMIT_TYPEHASH() returns (bytes32) envfree
     DOMAIN_SEPARATOR() returns (bytes32) envfree
+    hashHelper.computeDigestForDai(bytes32,bytes32,address,address,uint256,uint256,uint256) envfree
+    hashHelper.call_ecrecover(bytes32,uint8,bytes32,bytes32) returns (address) envfree
 }
 
 ghost balanceSum() returns mathint {
@@ -347,11 +351,20 @@ rule permit_revert(address owner, address spender, uint256 value, uint256 deadli
     env e;
 
     permit@withrevert(e, owner, spender, value, deadline, v, r, s);
-
+    bool permitReverted = lastReverted;
     bool revert1 = e.block.timestamp > deadline;
     bool revert2 = e.msg.value > 0;
+    bool revert3 = hashHelper.call_ecrecover(
+        hashHelper.computeDigestForDai(DOMAIN_SEPARATOR(), PERMIT_TYPEHASH(), owner, spender, value, nonces(owner), deadline),
+        v,
+        r,
+        s) == owner;
+    bool revert4 = owner != 0;
 
-    assert(revert1 => lastReverted, "Deadline exceed did not revert");
-    assert(revert2 => lastReverted, "Sending ETH did not revert");
+    assert(revert1 => permitReverted, "Deadline exceed did not revert");
+    assert(revert2 => permitReverted, "Sending ETH did not revert");
+    assert(revert3 => permitReverted, "Wrong signature did not revert");
+    assert(revert4 => permitReverted, "Owner must not be 0");
+    assert(permitReverted => revert1 || revert2 || revert3 || revert4);
     // TODO: Add the missing revert condition and full coverage for revert cases
 }
